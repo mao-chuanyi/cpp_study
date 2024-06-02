@@ -1,0 +1,4 @@
+2024-06-01 19:12:32,193 salesDepart [FATAL] this is a emerg msg
+2024-06-01 19:12:32,193 salesDepart [ERROR] this is a error msg
+2024-06-01 19:12:32,193 salesDepart [INFO] this is a info msg
+2024-06-01 19:12:32,193 salesDepart [WARN] this is a warn msg
