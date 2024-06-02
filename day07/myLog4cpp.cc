@@ -25,7 +25,7 @@ int main(){
     pos->setLayout(ptn1);
     rollpos->setLayout(ptn2);
 
-    //3.创建日志记录器
+    //3.创建日志记录器(记录日志来源)
     Category & salesDepart = Category::getInstance("salesDepart");
 
     //4.设置优先级
