@@ -33,7 +33,7 @@ public:
     // 接口函数， 调用对应的Query_base操作
     QueryResult eval(const TextQuery &t) const
     {
-        return q->eval(t);
+        return q->eval(t);//体现多态
     }
     string rep() const
     {
@@ -105,7 +105,7 @@ protected:
     string rep() const
     {
         cout << "BinaryQuery::rep()" << endl;
-        return "(" + _lhs.rep() + _opSam + _rhs.rep() + ")";
+        return "(" + _lhs.rep() + " " + _opSam + " " +  _rhs.rep() + ")";
     }
     Query _lhs, _rhs; // 左侧和右侧运算对象
     string _opSam;    // 运算符
@@ -137,7 +137,7 @@ class AndQuery
 };
 
 inline Query::Query(const string &s)
-    : q(new WordQuery(s))
+    : q(new WordQuery(s))//基类指针指向(shared_ptr<Query_base>)派生类对象(WordQuery)
 {
     cout << "Query(const sting&)" << endl;
 }

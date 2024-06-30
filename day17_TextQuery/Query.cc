@@ -5,7 +5,7 @@ QueryResult NotQuery::eval(const TextQuery &t) const
     auto result = query.eval(t);
     auto ret_lines = make_shared<set<line_no>>();
     auto beg = result.begin();
-    auto end = result.end();
+    auto end = result.end();//此处的end是最后一个数的下一个，即end没有指向实质性的数
     size_t sz = result.get_file()->size();
     for (size_t i = 0; i != sz; ++i)
     {
