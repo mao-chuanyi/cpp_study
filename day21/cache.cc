@@ -31,22 +31,15 @@ public:
         }
         else
         {
-            if (_cache.size() == _cap) // 缓存满，删除链表尾（最近最少使用）
+            if ((int)_cache.size() == _cap) // 缓存满，删除链表尾（最近最少使用）
             {
-                cout << "full size = " << _cache.size() << endl;
                 _cache.push_front(make_pair(key, value)); // 插入表头
                 _hashMap.insert({key, _cache.begin()});   // 插入哈希表
-                for (auto it = _cache.begin(); it != _cache.end(); ++it)
-                {
-                    cout << "{" << it->first << "," << it->second << "}" << endl;
-                }
-                cout << (--(_cache.end()))->first << endl;
-                _hashMap.erase((--_cache.end())->first); // 在哈希表中删除最后一个节点（最近最久未访问）
+                _hashMap.erase(_cache.back().first);      // 在哈希表中删除最后一个节点（最近最久未访问）
                 _cache.pop_back();
             }
             else // 缓存没有满，插入链表头（最近访问）
             {
-                cout << "not full size = " << _cache.size() << endl;
                 _cache.push_front(make_pair(key, value)); // 插入表头
                 _hashMap.insert({key, _cache.begin()});   // 插入哈希表
             }
