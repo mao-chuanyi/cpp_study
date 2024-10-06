@@ -1,0 +1,18 @@
+syntax="proto3";
+
+message ReqSignin
+{
+    string username = 1;
+    string encodedPassword = 2;
+}
+
+message RespSignin
+{
+    int32 code = 1;
+    string message = 2;
+}
+
+service UserSigninService
+{
+    rpc Signin(ReqSignin) returns(RespSignin) {};
+}

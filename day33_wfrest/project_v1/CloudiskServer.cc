@@ -2,6 +2,8 @@
 #include "Token.h"
 #include "Hash.h"
 #include "unixHeader.h"
+#include "rpc_signup/signup.srpc.h"
+#include "rpc_signin/signin.srpc.h"
 
 #include <workflow/MySQLMessage.h>
 #include <workflow/MySQLResult.h>
@@ -15,6 +17,7 @@ using std::cout;
 using std::endl;
 using std::string;
 using std::vector;
+using namespace srpc;
 
 void CloudiskServer::start(unsigned short port)
 {
@@ -37,70 +40,70 @@ void CloudiskServer::loadModules()
     loadUserLoginModule();
     loadUserInfoModule();
     loadFileQueryModule();
-    loadFileUploadModule();
+    // loadFileUploadModule();
     // loadFileDownloadModule();
 }
 
 void CloudiskServer::loadStaticResourceModule()
 {
-    _httpserver.GET("/user/signup", [](const HttpReq *, HttpResp *resp)
-                    { resp->File("static/view/signup.html"); });
+    _httpserver.GET("/user/signup", [](const HttpReq*, HttpResp* resp)
+        { resp->File("static/view/signup.html"); });
 
-    _httpserver.GET("/static/view/signin.html", [](const HttpReq *, HttpResp *resp)
-                    { resp->File("static/view/signin.html"); });
+    _httpserver.GET("/static/view/signin.html", [](const HttpReq*, HttpResp* resp)
+        { resp->File("static/view/signin.html"); });
 
-    _httpserver.GET("/static/view/home.html", [](const HttpReq *, HttpResp *resp)
-                    { resp->File("static/view/home.html"); });
+    _httpserver.GET("/static/view/home.html", [](const HttpReq*, HttpResp* resp)
+        { resp->File("static/view/home.html"); });
 
-    _httpserver.GET("/static/js/auth.js", [](const HttpReq *, HttpResp *resp)
-                    { resp->File("static/js/auth.js"); });
+    _httpserver.GET("/static/js/auth.js", [](const HttpReq*, HttpResp* resp)
+        { resp->File("static/js/auth.js"); });
 
-    _httpserver.GET("/static/img/avatar.jpeg", [](const HttpReq *, HttpResp *resp)
-                    { resp->File("static/img/avatar.jpeg"); });
+    _httpserver.GET("/static/img/avatar.jpeg", [](const HttpReq*, HttpResp* resp)
+        { resp->File("static/img/avatar.jpeg"); });
 
-    _httpserver.GET("/file/upload", [](const HttpReq *, HttpResp *resp)
-                    { resp->File("static/view/index.html"); });
+    _httpserver.GET("/file/upload", [](const HttpReq*, HttpResp* resp)
+        { resp->File("static/view/index.html"); });
     _httpserver.Static("/file/upload_files", "static/view/upload_files");
 }
 
 void CloudiskServer::loadUserRegisterModule()
 {
     _httpserver.POST("/user/signup", std::bind(&CloudiskServer::loadUserRegisterCallback, this,
-                                               std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+        std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
 }
 
 void CloudiskServer::loadUserLoginModule()
 {
     _httpserver.POST("/user/signin", std::bind(&CloudiskServer::loadUserLoginCallback, this,
-                                               std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+        std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
 }
 
 void CloudiskServer::loadUserInfoModule()
 {
     _httpserver.GET("/user/info", std::bind(&CloudiskServer::loadUserInfoCallback, this,
-                                            std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+        std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
 }
 
 void CloudiskServer::loadFileQueryModule()
 {
     _httpserver.POST("/file/query", std::bind(&CloudiskServer::loadFileQueryCallback, this,
-                                              std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+        std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
 }
 
 void CloudiskServer::loadFileUploadModule()
 {
     _httpserver.POST("/file/upload", std::bind(&CloudiskServer::loadFileUploadCallback, this,
-                                               std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+        std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
 }
 
 void CloudiskServer::loadFileDownloadModule()
 {
     _httpserver.GET("/file/downloadurl", std::bind(&CloudiskServer::loadFileDownloadCallback, this,
-                                                   std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+        std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
 }
 
 // 注册的回调函数
-void CloudiskServer::loadUserRegisterCallback(const HttpReq *req, HttpResp *resp, SeriesWork *series)
+void CloudiskServer::loadUserRegisterCallback(const HttpReq* req, HttpResp* resp, SeriesWork* series)
 {
     if (req->content_type() == APPLICATION_URLENCODED)
     {
@@ -110,15 +113,82 @@ void CloudiskServer::loadUserRegisterCallback(const HttpReq *req, HttpResp *resp
         string password = formKV["password"];
         cout << "username:" << username << endl;
         cout << "password:" << password << endl;
+        //2. 从注册中心找到微服务端所对应的ip:port
         // 向consul发送http请求获得一个json
-        // 解析json获得ip和端口号
-        // client对象调用rpc
-        // 获得rpc响应回复给客户端
+        string consul_url = "http://192.168.88.150:8500/v1/agent/services";
+        auto* httpTask = WFTaskFactory::create_http_task(consul_url, 10, 0,
+            [=](WFHttpTask* httpTask)
+            {
+                int state = httpTask->get_state();
+                int error = httpTask->get_error();
+                if (state == WFT_STATE_SUCCESS)
+                {
+                    protocol::HttpResponse* httpresp = httpTask->get_resp();
+                    const void* body;
+                    size_t body_len;
+                    httpresp->get_parsed_body(&body, &body_len);
+                    string resp_body(static_cast<const char*>(body), body_len);
+                    //解析json
+                    using Json = nlohmann::json;
+                    Json json = Json::parse(resp_body);
+                    string address = json["SignupService1"]["Address"];
+                    unsigned short port = json["SignupService1"]["Port"];
+                    cout << "address: " << address << "\n";
+                    cout << "port: " << port << "\n";
+                    //3. client对象调用rpc
+                    UserService::SRPCClient client(address.c_str(), port);
+                    ReqSignup signup_req;
+                    signup_req.set_username(username);
+                    signup_req.set_password(password);
+
+                    // 创建一个 promise 和 future 来等待 RPC 调用完成
+                    auto promise = std::make_shared<std::promise<std::string>>();//用于rpc异步完成时在回调函数中存储结果
+                    auto future = promise->get_future().share();//创建一个与promise关联的future，这个future会等待promise的值
+
+                    client.Signup(&signup_req,
+                        [promise, series](RespSignup* response, RPCContext* context)
+                        {
+                            // 获得rpc响应回复给客户端
+                            if (context->success()) {
+                                // RPC 调用成功，返回响应
+                                string message = response->message();
+                                cout << "message = " << message << "\n";
+                                promise->set_value(message);//会将结果传递给future
+                            }
+                            else {
+                                // RPC 调用失败，处理错误
+                                cout << "RPC error: " << context->get_error() << endl;
+                                promise->set_value("RPC failed.");
+                            }
+                        }
+                    );
+
+                    // 创建一个 Go 任务来等待 RPC 调用完成
+                    //虽然这里是同步的，但是因为这是所有任务执行完毕的最后一步，因此不会阻塞之前的异步任务
+                    auto* go_task = WFTaskFactory::create_go_task(
+                        "wait_rpc",
+                        [future, resp]() {
+                            std::string result = future.get();//这里会阻塞等待rpc的异步回调中将值放入promise
+                            resp->String(result);
+                        });
+
+                    series->push_back(go_task);
+                }
+                else
+                {
+                    // 处理请求失败的情况
+                    cout << "HTTP request failed. State: " << state << " Error: " << error << endl;
+                    resp->String("Failed to contact Consul.");
+                }
+            }
+        );
+        series->push_back(httpTask);
+
     }
 }
 
 // 登录的回调函数
-void CloudiskServer::loadUserLoginCallback(const HttpReq *req, HttpResp *resp, SeriesWork *series)
+void CloudiskServer::loadUserLoginCallback(const HttpReq* req, HttpResp* resp, SeriesWork* series)
 {
     if (req->content_type() == APPLICATION_URLENCODED)
     {
@@ -132,83 +202,75 @@ void CloudiskServer::loadUserLoginCallback(const HttpReq *req, HttpResp *resp, S
         string salt("12345678"); // 这里应该是随机生成
         string encodedPassword(crypt(password.c_str(), salt.c_str()));
         cout << "mi wen:" << encodedPassword << endl;
-        // 3. 从数据库MySQL中读取用户信息进行登录验证
-        string mysqlurl("mysql://root:112358@localhost");
-        auto mysqlTask = WFTaskFactory::create_mysql_task(mysqlurl, 1,
-                                                          [=](WFMySQLTask *mysqltask)
-                                                          {
-                                                              // 0. 对任务的状态进行检测
-                                                              int state = mysqltask->get_state();
-                                                              int error = mysqltask->get_error();
-                                                              if (state != WFT_STATE_SUCCESS)
-                                                              {
-                                                                  printf("%s\n", WFGlobal::get_error_string(state, error));
-                                                                  return;
-                                                              }
-                                                              // 1. 检测SQL语句是否存在语法错误
-                                                              auto mysqlResp = mysqltask->get_resp();
-                                                              if (mysqlResp->get_packet_type() == MYSQL_PACKET_ERROR)
-                                                              {
-                                                                  printf("ERROR %d: %s\n", mysqlResp->get_error_code(),
-                                                                         mysqlResp->get_error_msg().c_str());
-                                                                  resp->String("Singup Failed");
-                                                                  return;
-                                                              }
-                                                              using namespace protocol;
-                                                              MySQLResultCursor cursor(mysqlResp);
-                                                              if (cursor.get_cursor_status() == MYSQL_STATUS_OK)
-                                                              {
-                                                                  // 2. 成功写入数据库了
-                                                                  printf("Query OK. %llu row affected.\n", cursor.get_affected_rows());
-                                                                  resp->String("Login Failed");
-                                                              }
-                                                              else if (cursor.get_cursor_status() == MYSQL_STATUS_GET_RESULT)
-                                                              {
-                                                                  // 3. 读取数据
-                                                                  vector<vector<MySQLCell>> matrix;
-                                                                  cursor.fetch_all(matrix);
-                                                                  string M = matrix[0][0].as_string();
-                                                                  cout << "M:" << M << endl;
-                                                                  if (encodedPassword == M)
-                                                                  {
-                                                                      // 3.1登录成功的情况, 生成Token信息
-                                                                      Token token(username, salt);
-                                                                      string tokenStr = token.genToken();
-                                                                      printf("token = %s\n", tokenStr.c_str());
-                                                                      // 3.2构造一个JSON对象，发送给客户端
-                                                                      using Json = nlohmann::json;
-                                                                      Json msg;
-                                                                      Json data;
-                                                                      data["Token"] = tokenStr;
-                                                                      data["Username"] = username;
-                                                                      data["Location"] = "/static/view/home.html"; // 跳转到用户中心页面
-                                                                      msg["data"] = data;
-                                                                      resp->String(msg.dump()); // 序列化之后，发送给客户端
 
-                                                                      // 3.3 将Token保存到数据库中
-                                                                      auto nextTask = WFTaskFactory::create_mysql_task(mysqlurl, 1, nullptr);
-                                                                      string sql("REPLACE INTO cloudisk.tbl_user_token(user_name, user_token)VALUES('");
-                                                                      sql += username + "', '" + tokenStr + "')";
-                                                                      nextTask->get_req()->set_query(sql);
-                                                                      series->push_back(nextTask);
-                                                                  }
-                                                                  else
-                                                                  {
-                                                                      // 登录失败的情况
-                                                                      resp->String("Login Failed");
-                                                                  }
-                                                              }
-                                                          });
-        string sql("select user_pwd from cloudisk.tbl_user where user_name = '");
-        sql += username + "' limit 1";
-        cout << "sql:\n"
-             << sql << endl;
-        mysqlTask->get_req()->set_query(sql);
-        series->push_back(mysqlTask);
+        string consul_url = "http://192.168.88.150:8500/v1/agent/services";
+        auto* httpTask = WFTaskFactory::create_http_task(consul_url, 10, 0,
+            [=](WFHttpTask* httpTask)
+            {
+                int state = httpTask->get_state();
+                int error = httpTask->get_error();
+                if (state == WFT_STATE_SUCCESS)
+                {
+                    protocol::HttpResponse* httpresp = httpTask->get_resp();
+                    const void* body;
+                    size_t body_len;
+                    httpresp->get_parsed_body(&body, &body_len);
+                    string resp_body(static_cast<const char*>(body), body_len);
+                    //解析json
+                    using Json = nlohmann::json;
+                    Json json = Json::parse(resp_body);
+                    string address = json["SigninService1"]["Address"];
+                    unsigned short port = json["SigninService1"]["Port"];
+                    cout << "address: " << address << "\n";
+                    cout << "port: " << port << "\n";
+                    //3. client对象调用rpc
+                    UserSigninService::SRPCClient client(address.c_str(), port);
+                    ReqSignin signin_req;
+                    signin_req.set_username(username);
+                    signin_req.set_encodedpassword(encodedPassword);
+
+                    auto promise = std::make_shared<std::promise<string>>();
+                    auto future = promise->get_future().share();
+
+                    client.Signin(&signin_req,
+                        [promise](RespSignin* response, RPCContext* context)
+                        {
+                            // 获得rpc响应回复给客户端
+                            if (context->success()) {
+                                // RPC 调用成功，返回响应
+                                string message = response->message();
+                                cout << message << "\n";
+                                promise->set_value(message);
+                            }
+                            else {
+                                // RPC 调用失败，处理错误
+                                cout << "RPC error: " << context->get_error() << endl;
+                                promise->set_value("RPC failed.");
+                            }
+                        }
+                    );
+
+                    auto waitTask = WFTaskFactory::create_go_task(
+                        "wait_rpc",
+                        [future, resp]() {
+                            resp->String(future.get());
+                        }
+                    );
+                    series->push_back(waitTask);
+                }
+                else
+                {
+                    // 处理请求失败的情况
+                    cout << "HTTP request failed. State: " << state << " Error: " << error << endl;
+                    resp->String("Failed to contact Consul.");
+                }
+            }
+        );
+        series->push_back(httpTask);
     }
 }
 
-void CloudiskServer::loadUserInfoCallback(const HttpReq *req, HttpResp *resp, SeriesWork *series)
+void CloudiskServer::loadUserInfoCallback(const HttpReq* req, HttpResp* resp, SeriesWork* series)
 {
     // 1. 解析请求
     string username = req->query("username");
@@ -228,39 +290,39 @@ void CloudiskServer::loadUserInfoCallback(const HttpReq *req, HttpResp *resp, Se
     // 3. 执行信号获取的操作
     string mysqlurl("mysql://root:112358@localhost");
     auto mysqlTask = WFTaskFactory::create_mysql_task(mysqlurl, 1,
-                                                      [=](WFMySQLTask *mysqltask)
-                                                      {
-                                                          //...检测
-                                                          using namespace protocol;
-                                                          auto mysqlResp = mysqltask->get_resp();
-                                                          MySQLResultCursor cursor(mysqlResp);
-                                                          if (cursor.get_cursor_status() == MYSQL_STATUS_GET_RESULT)
-                                                          {
-                                                              // 读操作,获取用户的注册时间
-                                                              vector<vector<MySQLCell>> matrix;
-                                                              cursor.fetch_all(matrix);
-                                                              string signupAt = matrix[0][0].as_string();
-                                                              using Json = nlohmann::json;
-                                                              Json msg;
-                                                              Json data;
-                                                              data["Username"] = username;
-                                                              data["SignupAt"] = signupAt;
-                                                              msg["data"] = data;
-                                                              resp->String(msg.dump());
-                                                          }
-                                                          else
-                                                          {
-                                                              // 没有读取到正确的信息
-                                                              resp->String("error");
-                                                          }
-                                                      });
+        [=](WFMySQLTask* mysqltask)
+        {
+            //...检测
+            using namespace protocol;
+            auto mysqlResp = mysqltask->get_resp();
+            MySQLResultCursor cursor(mysqlResp);
+            if (cursor.get_cursor_status() == MYSQL_STATUS_GET_RESULT)
+            {
+                // 读操作,获取用户的注册时间
+                vector<vector<MySQLCell>> matrix;
+                cursor.fetch_all(matrix);
+                string signupAt = matrix[0][0].as_string();
+                using Json = nlohmann::json;
+                Json msg;
+                Json data;
+                data["Username"] = username;
+                data["SignupAt"] = signupAt;
+                msg["data"] = data;
+                resp->String(msg.dump());
+            }
+            else
+            {
+                // 没有读取到正确的信息
+                resp->String("error");
+            }
+        });
     string sql("select signup_at from cloudisk.tbl_user where user_name = '");
     sql += username + "'";
     mysqlTask->get_req()->set_query(sql);
     series->push_back(mysqlTask);
 }
 
-void CloudiskServer::loadFileQueryCallback(const HttpReq *req, HttpResp *resp, SeriesWork *series)
+void CloudiskServer::loadFileQueryCallback(const HttpReq* req, HttpResp* resp, SeriesWork* series)
 {
     // 1. 解析请求: 查询词
     string username = req->query("username");
@@ -281,46 +343,46 @@ void CloudiskServer::loadFileQueryCallback(const HttpReq *req, HttpResp *resp, S
 
     string mysqlurl("mysql://root:112358@localhost");
     auto mysqlTask = WFTaskFactory::create_mysql_task(mysqlurl, 1,
-                                                      [=](WFMySQLTask *mysqltask)
-                                                      {
-                                                          //...检测
-                                                          using namespace protocol;
-                                                          auto mysqlResp = mysqltask->get_resp();
-                                                          MySQLResultCursor cursor(mysqlResp);
-                                                          if (cursor.get_cursor_status() == MYSQL_STATUS_GET_RESULT)
-                                                          {
-                                                              // 读操作,获取用户的
-                                                              vector<vector<MySQLCell>> matrix;
-                                                              cursor.fetch_all(matrix);
-                                                              using Json = nlohmann::json;
-                                                              Json msgArr;
-                                                              for (size_t i = 0; i < matrix.size(); ++i)
-                                                              {
-                                                                  Json row;
-                                                                  row["FileHash"] = matrix[i][0].as_string();
-                                                                  row["FileName"] = matrix[i][1].as_string();
-                                                                  row["FileSize"] = matrix[i][2].as_ulonglong();
-                                                                  row["UploadAt"] = matrix[i][3].as_datetime();
-                                                                  row["LastUpdated"] = matrix[i][4].as_datetime();
-                                                                  msgArr.push_back(row); // 在数组中添加一个元素,使用push_back即可
-                                                              }
-                                                              resp->String(msgArr.dump());
-                                                          }
-                                                          else
-                                                          {
-                                                              // 没有读取到正确的信息
-                                                              resp->String("error");
-                                                          }
-                                                      });
+        [=](WFMySQLTask* mysqltask)
+        {
+            //...检测
+            using namespace protocol;
+            auto mysqlResp = mysqltask->get_resp();
+            MySQLResultCursor cursor(mysqlResp);
+            if (cursor.get_cursor_status() == MYSQL_STATUS_GET_RESULT)
+            {
+                // 读操作,获取用户的
+                vector<vector<MySQLCell>> matrix;
+                cursor.fetch_all(matrix);
+                using Json = nlohmann::json;
+                Json msgArr;
+                for (size_t i = 0; i < matrix.size(); ++i)
+                {
+                    Json row;
+                    row["FileHash"] = matrix[i][0].as_string();
+                    row["FileName"] = matrix[i][1].as_string();
+                    row["FileSize"] = matrix[i][2].as_ulonglong();
+                    row["UploadAt"] = matrix[i][3].as_datetime();
+                    row["LastUpdated"] = matrix[i][4].as_datetime();
+                    msgArr.push_back(row); // 在数组中添加一个元素,使用push_back即可
+                }
+                resp->String(msgArr.dump());
+            }
+            else
+            {
+                // 没有读取到正确的信息
+                resp->String("error");
+            }
+        });
     string sql("select file_sha1, file_name, file_size, upload_at, last_update from cloudisk.tbl_user_file where user_name = '");
     sql += username + "' limit " + limitCnt;
     cout << "\nsql:\n"
-         << sql << endl;
+        << sql << endl;
     mysqlTask->get_req()->set_query(sql);
     series->push_back(mysqlTask);
 }
 
-void CloudiskServer::loadFileUploadCallback(const HttpReq *req, HttpResp *resp, SeriesWork *series)
+void CloudiskServer::loadFileUploadCallback(const HttpReq* req, HttpResp* resp, SeriesWork* series)
 {
     // 1. 解析请求
     string username = req->query("username");
@@ -353,20 +415,20 @@ void CloudiskServer::loadFileUploadCallback(const HttpReq *req, HttpResp *resp, 
             perror("open");
             return;
         }
-        WFFileIOTask *pwriteTask = WFTaskFactory::create_pwrite_task(fd, content.c_str(), content.size(), 0,
-                                                                     [fd, resp](WFFileIOTask *pwriteTask)
-                                                                     {
-                                                                         if (pwriteTask->get_state() == WFT_STATE_SUCCESS)
-                                                                         {
-                                                                             close(fd);
-                                                                             resp->String("Upload Success");
-                                                                         }
-                                                                         else
-                                                                         {
-                                                                             close(fd);
-                                                                             resp->String("Upload Failed");
-                                                                         }
-                                                                     });
+        WFFileIOTask* pwriteTask = WFTaskFactory::create_pwrite_task(fd, content.c_str(), content.size(), 0,
+            [fd, resp](WFFileIOTask* pwriteTask)
+            {
+                if (pwriteTask->get_state() == WFT_STATE_SUCCESS)
+                {
+                    close(fd);
+                    resp->String("Upload Success");
+                }
+                else
+                {
+                    close(fd);
+                    resp->String("Upload Failed");
+                }
+            });
         series->push_back(pwriteTask);
 
         // 用消息队列rabbitmq生产一个json消息（用于备份）(生产者)
@@ -385,13 +447,13 @@ void CloudiskServer::loadFileUploadCallback(const HttpReq *req, HttpResp *resp, 
         string sql("INSERT INTO cloudisk.tbl_user_file(user_name,file_sha1,file_size,file_name)VALUES('");
         sql += username + "','" + filehash + "', " + std::to_string(content.size()) + ",'" + filename + "')";
         cout << "\nsql:\n"
-             << sql << endl;
+            << sql << endl;
         mysqlTask->get_req()->set_query(sql);
         series->push_back(mysqlTask);
     }
 }
 
-void CloudiskServer::loadFileDownloadCallback(const HttpReq *req, HttpResp *resp, SeriesWork *series)
+void CloudiskServer::loadFileDownloadCallback(const HttpReq* req, HttpResp* resp, SeriesWork* series)
 {
     // 1. 解析请求
     string username = req->query("username");
